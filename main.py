@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 import os
 from google.generativeai import configure, GenerativeModel
+import re
 
 # Configuração das chaves de API
 MY_SHIP_TRACKING_API_KEY = os.environ.get("MY_SHIP_TRACKING_API_KEY", "SUA_CHAVE_API_MYSHIPTRACKING")
@@ -34,43 +35,117 @@ class ShippingAnalyzer:
             "name": port_name
         }
         
-        port_response = requests.get(port_endpoint, params=port_params)
+        try:
+            port_response = requests.get(port_endpoint, params=port_params)
+            
+            if port_response.status_code != 200:
+                return {"error": f"Failed to fetch port data: {port_response.status_code}"}
+            
+            port_data = port_response.json()
+            
+            if not port_data or len(port_data) == 0:
+                return {"error": f"No ports found with name: {port_name}"}
+            
+            # Usar o primeiro porto encontrado
+            port = port_data[0]
+            
+            # Agora buscar navios ativos que têm este porto como destino ou origem
+            vessels_endpoint = f"{self.base_url}/vessels"
+            
+            vessels_params = {
+                "api_key": self.myship_api_key,
+                "name": ""  # Busca ampla
+            }
+            
+            vessels_response = requests.get(vessels_endpoint, params=vessels_params)
+            
+            if vessels_response.status_code != 200:
+                return {"error": f"Failed to fetch vessels data: {vessels_response.status_code}"}
+            
+            all_vessels = vessels_response.json()
+            
+            # Filtrar apenas navios relacionados ao porto
+            port_related_vessels = []
+            
+            for vessel in all_vessels:
+                if vessel.get("destination") == port_name or vessel.get("last_port") == port_name:
+                    port_related_vessels.append(vessel)
+            
+            return {"ships": port_related_vessels, "port": port}
+        except Exception as e:
+            return {"error": f"Error fetching data: {str(e)}"}
+    
+    def get_ship_by_mmsi(self, mmsi):
+        """Obtém detalhes de um navio específico pelo MMSI."""
+        vessel_endpoint = f"{self.base_url}/vessels/{mmsi}"
         
-        if port_response.status_code != 200:
-            return {"error": f"Failed to fetch port data: {port_response.status_code}"}
+        vessel_params = {
+            "api_key": self.myship_api_key
+        }
         
-        port_data = port_response.json()
-        
-        if not port_data or len(port_data) == 0:
-            return {"error": f"No ports found with name: {port_name}"}
-        
-        # Usar o primeiro porto encontrado
-        port = port_data[0]
-        
-        # Agora buscar navios ativos que têm este porto como destino ou origem
+        try:
+            vessel_response = requests.get(vessel_endpoint, params=vessel_params)
+            
+            if vessel_response.status_code != 200:
+                return {"error": f"Failed to fetch vessel data: {vessel_response.status_code}"}
+            
+            vessel_data = vessel_response.json()
+            
+            return {"ship": vessel_data}
+        except Exception as e:
+            return {"error": f"Error fetching data: {str(e)}"}
+    
+    def search_vessels(self, query, limit=10):
+        """Pesquisa navios por nome, tipo, bandeira, etc."""
         vessels_endpoint = f"{self.base_url}/vessels"
         
         vessels_params = {
             "api_key": self.myship_api_key,
-            "name": ""  # Busca ampla
+            "name": query
         }
         
-        vessels_response = requests.get(vessels_endpoint, params=vessels_params)
+        try:
+            vessels_response = requests.get(vessels_endpoint, params=vessels_params)
+            
+            if vessels_response.status_code != 200:
+                return {"error": f"Failed to fetch vessels data: {vessels_response.status_code}"}
+            
+            all_vessels = vessels_response.json()
+            
+            # Limitar o número de resultados
+            limited_vessels = all_vessels[:limit] if len(all_vessels) > limit else all_vessels
+            
+            return {"ships": limited_vessels}
+        except Exception as e:
+            return {"error": f"Error fetching data: {str(e)}"}
+    
+    def get_port_info(self, port_name):
+        """Obtém informações detalhadas sobre um porto específico."""
+        port_endpoint = f"{self.base_url}/ports"
         
-        if vessels_response.status_code != 200:
-            return {"error": f"Failed to fetch vessels data: {vessels_response.status_code}"}
+        port_params = {
+            "api_key": self.myship_api_key,
+            "name": port_name
+        }
         
-        all_vessels = vessels_response.json()
-        
-        # Filtrar apenas navios relacionados ao porto
-        port_related_vessels = []
-        
-        for vessel in all_vessels:
-            if vessel.get("destination") == port_name or vessel.get("last_port") == port_name:
-                port_related_vessels.append(vessel)
-        
-        return {"ships": port_related_vessels}
-        
+        try:
+            port_response = requests.get(port_endpoint, params=port_params)
+            
+            if port_response.status_code != 200:
+                return {"error": f"Failed to fetch port data: {port_response.status_code}"}
+            
+            port_data = port_response.json()
+            
+            if not port_data or len(port_data) == 0:
+                return {"error": f"No ports found with name: {port_name}"}
+            
+            # Usar o primeiro porto encontrado
+            port = port_data[0]
+            
+            return {"port": port}
+        except Exception as e:
+            return {"error": f"Error fetching data: {str(e)}"}
+    
     def get_ships_in_area(self, latitude, longitude, radius=50):
         """Obtém navios em uma área específica (dados simulados)."""
         # Dados simulados para demonstração
@@ -104,345 +179,452 @@ class ShippingAnalyzer:
             "note": "Dados simulados para demonstração. API MyShipTracking não suporta busca por área geográfica."
         }
     
-    def _get_region_coordinates(self, region_name, custom_coords=None):
-        """Obtém coordenadas de uma região conhecida ou customizada."""
-        if custom_coords:
-            return custom_coords
+    def analyze_query(self, query):
+        """Analisa a consulta do usuário para determinar a intenção e extrair parâmetros relevantes."""
+        query = query.lower()
         
-        # Coordenadas pré-definidas para regiões comuns
-        regions = {
-            "Canal de Suez": {"lat": 30.4276, "lon": 32.3439, "radius": 80},
-            "Estreito de Gibraltar": {"lat": 35.9897, "lon": -5.6125, "radius": 50},
-            "Canal do Panamá": {"lat": 9.1480, "lon": -79.8308, "radius": 70},
-            "Estreito de Malaca": {"lat": 1.7136, "lon": 101.4661, "radius": 100},
-            "Porto de Roterdã": {"lat": 51.9244, "lon": 4.4777, "radius": 40},
-            "Costa do Brasil": {"lat": -23.9619, "lon": -46.3042, "radius": 120},
-            "Porto de Los Angeles": {"lat": 33.7283, "lon": -118.2712, "radius": 50},
-            "Porto de Shanghai": {"lat": 31.2304, "lon": 121.4737, "radius": 60}
+        # Padrões de reconhecimento para vários tipos de consultas
+        port_patterns = [
+            r'porto\s+de\s+([a-zA-Z\s]+)',
+            r'porto\s+([a-zA-Z\s]+)',
+            r'portos?\s+em\s+([a-zA-Z\s]+)',
+            r'portos?\s+próximos?\s+a\s+([a-zA-Z\s]+)',
+            r'harbour\s+of\s+([a-zA-Z\s]+)',
+            r'port\s+of\s+([a-zA-Z\s]+)'
+        ]
+        
+        vessel_patterns = [
+            r'navio\s+([a-zA-Z0-9\s]+)',
+            r'embarcação\s+([a-zA-Z0-9\s]+)',
+            r'vessel\s+([a-zA-Z0-9\s]+)',
+            r'ship\s+([a-zA-Z0-9\s]+)'
+        ]
+        
+        mmsi_patterns = [
+            r'mmsi\s*[:\-]?\s*(\d{9})',
+            r'mmsi\s+(\d{9})'
+        ]
+        
+        region_patterns = [
+            r'região\s+de\s+([a-zA-Z\s]+)',
+            r'área\s+de\s+([a-zA-Z\s]+)',
+            r'próximo\s+a\s+([a-zA-Z\s]+)',
+            r'perto\s+de\s+([a-zA-Z\s]+)',
+            r'region\s+of\s+([a-zA-Z\s]+)',
+            r'near\s+([a-zA-Z\s]+)'
+        ]
+        
+        vessel_type_patterns = [
+            r'navios?\s+do\s+tipo\s+([a-zA-Z\s]+)',
+            r'navios?\s+([a-zA-Z\s]+)',
+            r'embarcações?\s+do\s+tipo\s+([a-zA-Z\s]+)',
+            r'embarcações?\s+([a-zA-Z\s]+)',
+            r'ships?\s+of\s+type\s+([a-zA-Z\s]+)',
+            r'([a-zA-Z\s]+)\s+ships'
+        ]
+        
+        flag_patterns = [
+            r'bandeira\s+d[eo]\s+([a-zA-Z\s]+)',
+            r'flag\s+of\s+([a-zA-Z\s]+)'
+        ]
+        
+        # Tentar identificar a intenção principal e extrair parâmetros
+        intent = "general"
+        params = {}
+        
+        # Verificar portos
+        for pattern in port_patterns:
+            match = re.search(pattern, query)
+            if match:
+                intent = "port_info"
+                params["port_name"] = match.group(1).strip()
+                break
+        
+        # Verificar navios por nome
+        if intent == "general":
+            for pattern in vessel_patterns:
+                match = re.search(pattern, query)
+                if match:
+                    intent = "vessel_search"
+                    params["query"] = match.group(1).strip()
+                    break
+        
+        # Verificar navios por MMSI
+        if intent == "general":
+            for pattern in mmsi_patterns:
+                match = re.search(pattern, query)
+                if match:
+                    intent = "vessel_by_mmsi"
+                    params["mmsi"] = match.group(1).strip()
+                    break
+        
+        # Verificar regiões
+        if intent == "general":
+            for pattern in region_patterns:
+                match = re.search(pattern, query)
+                if match:
+                    region_name = match.group(1).strip()
+                    # Verificar se a região corresponde a alguma região conhecida
+                    regions = {
+                        "suez": {"name": "Canal de Suez", "lat": 30.4276, "lon": 32.3439},
+                        "gibraltar": {"name": "Estreito de Gibraltar", "lat": 35.9897, "lon": -5.6125},
+                        "panama": {"name": "Canal do Panamá", "lat": 9.1480, "lon": -79.8308},
+                        "malaca": {"name": "Estreito de Malaca", "lat": 1.7136, "lon": 101.4661},
+                        "roterdã": {"name": "Porto de Roterdã", "lat": 51.9244, "lon": 4.4777},
+                        "rotterdam": {"name": "Porto de Roterdã", "lat": 51.9244, "lon": 4.4777},
+                        "brasil": {"name": "Costa do Brasil", "lat": -23.9619, "lon": -46.3042},
+                        "brazil": {"name": "Costa do Brasil", "lat": -23.9619, "lon": -46.3042},
+                        "los angeles": {"name": "Porto de Los Angeles", "lat": 33.7283, "lon": -118.2712},
+                        "shanghai": {"name": "Porto de Shanghai", "lat": 31.2304, "lon": 121.4737}
+                    }
+                    
+                    for key, value in regions.items():
+                        if key in region_name.lower():
+                            intent = "ships_in_area"
+                            params["lat"] = value["lat"]
+                            params["lon"] = value["lon"]
+                            params["region_name"] = value["name"]
+                            break
+                    
+                    if intent == "general":
+                        # Se não encontrou uma região conhecida, tente usar como nome de porto
+                        intent = "port_info"
+                        params["port_name"] = region_name
+                    
+                    break
+        
+        # Verificar tipos de navios
+        if intent == "general":
+            for pattern in vessel_type_patterns:
+                match = re.search(pattern, query)
+                if match:
+                    vessel_type = match.group(1).strip()
+                    # Verificar se é um tipo de navio conhecido
+                    vessel_types = {
+                        "cargo": "Cargo",
+                        "carga": "Cargo",
+                        "passageiros": "Passenger",
+                        "passenger": "Passenger",
+                        "petroleiro": "Tanker",
+                        "tanker": "Tanker",
+                        "pesca": "Fishing",
+                        "fishing": "Fishing",
+                        "rebocador": "Tug",
+                        "tug": "Tug",
+                        "pleasure": "Pleasure Craft",
+                        "recreio": "Pleasure Craft"
+                    }
+                    
+                    for key, value in vessel_types.items():
+                        if key in vessel_type.lower():
+                            intent = "vessel_type_search"
+                            params["vessel_type"] = value
+                            break
+                    
+                    if intent == "general":
+                        # Se não encontrou um tipo conhecido, tente pesquisar mesmo assim
+                        intent = "vessel_type_search"
+                        params["vessel_type"] = vessel_type
+                    
+                    break
+        
+        # Verificar bandeiras
+        if intent == "general":
+            for pattern in flag_patterns:
+                match = re.search(pattern, query)
+                if match:
+                    flag = match.group(1).strip()
+                    intent = "flag_search"
+                    params["flag"] = flag
+                    break
+        
+        # Se ainda estiver como "general", considerar como uma consulta geral para o Gemini
+        
+        return {
+            "intent": intent,
+            "params": params
         }
-        
-        return regions.get(region_name, {"lat": 0, "lon": 0, "radius": 50})
     
-    def analyze_region_traffic(self, region_name, custom_coords=None):
-        """Analisa o tráfego marítimo em uma região específica."""
-        # Determinar coordenadas com base na região
-        coords = self._get_region_coordinates(region_name, custom_coords)
+    def execute_query(self, query_analysis):
+        """Executa a consulta com base na análise da intenção."""
+        intent = query_analysis["intent"]
+        params = query_analysis["params"]
         
-        # Obter dados dos navios
-        ships_data = self.get_ships_in_area(coords["lat"], coords["lon"], coords.get("radius", 50))
-        
-        if "error" in ships_data:
-            return {"error": ships_data["error"]}
-            
-        # Extrair dados dos navios para análise
-        ships = ships_data.get("ships", [])
-        
-        # Processar e agregar dados
-        analysis_data = self._process_ships_data(ships, region_name)
-        
-        # Realizar análise com IA
-        analysis_results = self._analyze_with_ai(analysis_data)
-        
-        # Resultados completos
-        result = {
-            "raw_data": ships_data,
-            "analysis_data": analysis_data,
-            "analysis_text": analysis_results,
-            "note": ships_data.get("note", "")
-        }
-        
-        return result
+        # Executar a ação adequada com base na intenção
+        if intent == "port_info":
+            return self.get_port_info(params["port_name"])
+        elif intent == "vessel_search":
+            return self.search_vessels(params["query"])
+        elif intent == "vessel_by_mmsi":
+            return self.get_ship_by_mmsi(params["mmsi"])
+        elif intent == "ships_in_area":
+            return self.get_ships_in_area(params["lat"], params["lon"])
+        elif intent == "vessel_type_search":
+            # Neste caso, simulamos dados de navios com o tipo específico
+            # Em uma implementação real, seria necessário uma API que suporte filtragem por tipo
+            ships_data = self.get_ships_in_area(0, 0)  # Coordenadas genéricas
+            filtered_ships = [ship for ship in ships_data.get("ships", []) if ship.get("type", "").lower() == params["vessel_type"].lower()]
+            return {"ships": filtered_ships}
+        elif intent == "flag_search":
+            # Similar ao anterior, simulamos dados com a bandeira especificada
+            ships_data = self.get_ships_in_area(0, 0)
+            filtered_ships = [ship for ship in ships_data.get("ships", []) if params["flag"].lower() in ship.get("flag", "").lower()]
+            return {"ships": filtered_ships}
+        else:
+            # Para consultas gerais, não temos dados específicos para buscar
+            return {"message": "Consulta geral", "intent": intent}
     
-    def _process_ships_data(self, ships, region_name):
-        """Processa dados brutos de navios para análise."""
-        total_ships = len(ships)
+    def generate_response(self, query, query_result):
+        """Gera uma resposta com base nos resultados da consulta e usa o Gemini para formatação."""
+        # Base do prompt para o Gemini
+        maritime_context = """
+        Você é um especialista em transporte marítimo com vasto conhecimento sobre navios, portos, rotas marítimas,
+        tecnologias de navegação, regulamentações internacionais e operações portuárias. Sua expertise inclui todas
+        as classes de embarcações, desde grandes navios porta-contêineres até pequenas embarcações de pesca.
         
-        # Contagem de tipos de navios
-        ship_types = {}
-        for ship in ships:
-            ship_type = ship.get("type", "Desconhecido")
-            ship_types[ship_type] = ship_types.get(ship_type, 0) + 1
+        Você deve SEMPRE:
+        - Fornecer informações precisas e atualizadas sobre o transporte marítimo
+        - Manter um tom profissional mas acessível
+        - Incluir detalhes relevantes que enriqueçam a compreensão do usuário
+        - Responder exclusivamente sobre temas relacionados ao transporte marítimo
         
-        # Velocidade média
-        speeds = [ship.get("speed", 0) for ship in ships if ship.get("speed") is not None]
-        avg_speed = sum(speeds) / len(speeds) if speeds else 0
-        
-        # Status dos navios
-        statuses = {}
-        for ship in ships:
-            status = ship.get("status", "Desconhecido")
-            statuses[status] = statuses.get(status, 0) + 1
-        
-        # Bandeiras
-        flags = {}
-        for ship in ships:
-            flag = ship.get("flag", "Desconhecido")
-            flags[flag] = flags.get(flag, 0) + 1
-        
-        # Direções (com base no curso)
-        directions = {
-            "Norte": 0, "Nordeste": 0, "Leste": 0, "Sudeste": 0,
-            "Sul": 0, "Sudoeste": 0, "Oeste": 0, "Noroeste": 0
-        }
-        
-        for ship in ships:
-            course = ship.get("course")
-            if course is not None:
-                if 337.5 <= course or course < 22.5:
-                    directions["Norte"] += 1
-                elif 22.5 <= course < 67.5:
-                    directions["Nordeste"] += 1
-                elif 67.5 <= course < 112.5:
-                    directions["Leste"] += 1
-                elif 112.5 <= course < 157.5:
-                    directions["Sudeste"] += 1
-                elif 157.5 <= course < 202.5:
-                    directions["Sul"] += 1
-                elif 202.5 <= course < 247.5:
-                    directions["Sudoeste"] += 1
-                elif 247.5 <= course < 292.5:
-                    directions["Oeste"] += 1
-                elif 292.5 <= course < 337.5:
-                    directions["Noroeste"] += 1
-        
-        # Formatar dados agregados para análise
-        analysis_data = {
-            "region": region_name,
-            "total_ships": total_ships,
-            "ship_types": ship_types,
-            "avg_speed": round(avg_speed, 1),
-            "statuses": statuses,
-            "flags": flags,
-            "directions": directions,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        
-        return analysis_data
-    
-    def _analyze_with_ai(self, analysis_data):
-        """Utiliza o modelo Gemini para analisar os dados de tráfego marítimo."""
-        # Formatar dados como texto para o modelo
-        prompt_text = f"""
-        Análise de tráfego marítimo na região: {analysis_data['region']}
-        Dados coletados em tempo real:
-        - Total de navios na área: {analysis_data['total_ships']}
-        - Velocidade média: {analysis_data['avg_speed']} nós
-        - Tipos de navios: {json.dumps(analysis_data['ship_types'])}
-        - Status dos navios: {json.dumps(analysis_data['statuses'])}
-        - Bandeiras: {json.dumps(analysis_data['flags'])}
-        - Direções: {json.dumps(analysis_data['directions'])}
-        
-        Com base nesses dados, faça uma análise completa do tráfego marítimo atual nesta região.
-        Inclua insights sobre:
-        1. Fluxo e densidade do tráfego
-        2. Possíveis congestionamentos ou áreas de preocupação
-        3. Distribuição e tipos de embarcações
-        4. Padrões de movimento (direções predominantes)
-        5. Recomendações para navegação segura na região
-        
-        Formatado como um relatório profissional para operadores marítimos.
+        Você NUNCA deve:
+        - Falar sobre temas não relacionados ao transporte marítimo ou assuntos adjacentes
+        - Inventar informações que não estejam nos dados fornecidos
+        - Usar linguagem excessivamente técnica sem explicação
         """
         
-        # Fazer a consulta ao modelo Gemini
+        # Formatar o prompt específico com base nos resultados da consulta
+        if "ships" in query_result and len(query_result["ships"]) > 0:
+            ships = query_result["ships"]
+            
+            prompt_text = f"""
+            {maritime_context}
+            
+            O usuário perguntou: "{query}"
+            
+            Encontrei os seguintes dados de navios:
+            {json.dumps(ships[:5] if len(ships) > 5 else ships, indent=2, ensure_ascii=False)}
+            
+            Total de navios encontrados: {len(ships)}
+            
+            Por favor, analise esses dados e responda à pergunta do usuário de forma completa e informativa.
+            Destaque informações relevantes como os tipos predominantes, bandeiras comuns, e outros padrões notáveis.
+            Se houver muitos navios, faça um resumo dos dados em vez de listar todos.
+            """
+                
+        elif "port" in query_result:
+            port = query_result["port"]
+            
+            prompt_text = f"""
+            {maritime_context}
+            
+            O usuário perguntou: "{query}"
+            
+            Encontrei as seguintes informações sobre o porto:
+            {json.dumps(port, indent=2, ensure_ascii=False)}
+            
+            Por favor, analise esses dados e responda à pergunta do usuário de forma completa e informativa.
+            Inclua informações relevantes sobre a localização, importância e características do porto.
+            ""
+        elif "ship" in query_result:
+            ship = query_result["ship"]
+            
+            prompt_text = f"""
+            {maritime_context}
+            
+            O usuário perguntou: "{query}"
+            
+            Encontrei as seguintes informações sobre o navio:
+            {json.dumps(ship, indent=2, ensure_ascii=False)}
+            
+            Por favor, analise esses dados e responda à pergunta do usuário de forma completa e informativa.
+            Destaque informações importantes como tipo, bandeira, posição atual e destino.
+            """
+        else:
+            prompt_text = f"""
+            {maritime_context}
+            
+            O usuário perguntou: "{query}"
+            
+            Não consegui classificar adequadamente esta consulta ou encontrar dados relevantes.
+            
+            Por favor, responda educadamente, sugerindo que o usuário reformule a pergunta de forma mais
+            específica, mencionando portos, navios, regiões marítimas ou outros termos relacionados ao 
+            transporte marítimo.
+            ""
+        
         try:
             response = self.gemini_model.generate_content(prompt_text)
-            analysis_text = response.text
+            return response.text
         except Exception as e:
-            analysis_text = f"Erro ao gerar análise: {str(e)}\n\nDados disponíveis para análise manual:\n{json.dumps(analysis_data, indent=2)}"
-        
-        return analysis_text
+            # Fallback para casos onde o Gemini falha
+            if "error" in query_result:
+                return f"Desculpe, não consegui processar sua consulta. Ocorreu um erro: {query_result['error']}"
+            elif "ships" in query_result and len(query_result["ships"]) > 0:
+                ships = query_result["ships"]
+                response = f"Encontrei {len(ships)} navios relacionados à sua consulta. "
+                if len(ships) <= 5:
+                    for ship in ships:
+                        response += f"\n\n• {ship.get('name', 'Desconhecido')} (MMSI: {ship.get('mmsi', 'Desconhecido')})"
+                        response += f"\n  Tipo: {ship.get('type', 'Desconhecido')}"
+                        response += f"\n  Bandeira: {ship.get('flag', 'Desconhecido')}"
+                        response += f"\n  Destino: {ship.get('destination', 'Desconhecido')}"
+                else:
+                    response += "Aqui estão os primeiros 5:\n\n"
+                    for ship in ships[:5]:
+                        response += f"• {ship.get('name', 'Desconhecido')} (MMSI: {ship.get('mmsi', 'Desconhecido')})"
+                        response += f"\n  Tipo: {ship.get('type', 'Desconhecido')}"
+                        response += f"\n  Bandeira: {ship.get('flag', 'Desconhecido')}"
+                        response += f"\n  Destino: {ship.get('destination', 'Desconhecido')}\n\n"
+                return response
+            else:
+                return "Desculpe, não consegui processar sua consulta. Por favor, tente reformular sua pergunta sobre transporte marítimo."
 
-def create_app():
-    """Cria a aplicação Streamlit."""
-    st.set_page_config(page_title="Análise de Tráfego Marítimo", page_icon="🚢", layout="wide")
+def create_chat_app():
+    """Cria a aplicação de chat marítimo com Streamlit."""
+    st.set_page_config(page_title="Chat Marítimo", page_icon="🚢", layout="wide")
     
-    st.title("🚢 Análise de Tráfego Marítimo em Tempo Real")
-    st.write("Esta aplicação utiliza dados AIS em tempo real e IA para analisar o tráfego marítimo em regiões importantes ao redor do mundo.")
+    st.title("🚢 Chat Marítimo")
+    st.write("Converse comigo sobre qualquer aspecto do transporte marítimo. Posso fornecer informações sobre navios, portos, rotas e mais!")
     
     # Inicializar o analisador
     analyzer = ShippingAnalyzer(MY_SHIP_TRACKING_API_KEY, gemini_model)
     
-    # Layout em duas colunas
-    col1, col2 = st.columns([1, 2])
+    # Inicializar histórico de chat se não existir
+    if "messages" not in st.session_state:
+        st.session_state.messages = [
+            {"role": "assistant", "content": "Olá! Sou seu assistente especializado em transporte marítimo. Como posso ajudá-lo hoje? Você pode me perguntar sobre navios específicos, portos, rotas marítimas e muito mais."}
+        ]
     
-    with col1:
-        st.subheader("Região de Interesse")
-        
-        # Opção de selecionar região pré-definida ou coordenadas customizadas
-        search_option = st.radio("Método de busca:", ["Região pré-definida", "Coordenadas específicas"])
-        
-        if search_option == "Região pré-definida":
-            # Lista de regiões pré-definidas
-            regions = [
-                "Canal de Suez",
-                "Estreito de Gibraltar",
-                "Canal do Panamá",
-                "Estreito de Malaca",
-                "Porto de Roterdã",
-                "Costa do Brasil",
-                "Porto de Los Angeles",
-                "Porto de Shanghai"
-            ]
-            region = st.selectbox("Selecione a região:", regions)
-            custom_coords = None
-        else:
-            # Entrada de coordenadas customizadas
-            st.write("Insira as coordenadas da área de interesse:")
-            lat = st.number_input("Latitude:", value=0.0, min_value=-90.0, max_value=90.0, step=0.1)
-            lon = st.number_input("Longitude:", value=0.0, min_value=-180.0, max_value=180.0, step=0.1)
-            radius = st.slider("Raio (milhas náuticas):", min_value=10, max_value=200, value=50, step=10)
-            region = f"Coordenadas Personalizadas ({lat}, {lon})"
-            custom_coords = {"lat": lat, "lon": lon, "radius": radius}
-        
-        # Botão para realizar análise
-        if st.button("Analisar Tráfego"):
-            with st.spinner("Obtendo dados de navios e realizando análise..."):
-                result = analyzer.analyze_region_traffic(region, custom_coords if search_option == "Coordenadas específicas" else None)
-                
-                if "error" in result:
-                    st.error(f"Erro ao obter dados: {result['error']}")
-                else:
-                    st.session_state.analysis_result = result
-                    st.success("Análise concluída!")
-                    
-                    # Mostrar nota sobre dados simulados, se aplicável
-                    if "note" in result:
-                        st.warning(result["note"])
+    # Exibir histórico de chat
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
     
-    with col2:
-        if "analysis_result" in st.session_state:
-            result = st.session_state.analysis_result
+    # Receber nova mensagem do usuário
+    if query := st.chat_input("Pergunte algo sobre transporte marítimo..."):
+        # Adicionar mensagem do usuário ao histórico
+        st.session_state.messages.append({"role": "user", "content": query})
+        
+        # Exibir mensagem do usuário
+        with st.chat_message("user"):
+            st.markdown(query)
+        
+        # Gerar resposta
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            message_placeholder.markdown("Analisando sua pergunta...")
             
-            st.subheader(f"Análise de Tráfego: {result['analysis_data']['region']}")
-            
-            # Layout em abas para organizar as informações
-            tab1, tab2, tab3 = st.tabs(["Análise de IA", "Visualizações", "Dados Brutos"])
-            
-            with tab1:
-                st.markdown(result["analysis_text"])
+            try:
+                # Analisar a intenção da consulta
+                query_analysis = analyzer.analyze_query(query)
                 
-                # Mostrar timestamp da análise
-                st.caption(f"Análise gerada em: {result['analysis_data']['timestamp']}")
-            
-            with tab2:
-                # Visualizações dos dados
-                st.subheader("Visualizações")
+                # Executar a consulta com base na análise
+                query_result = analyzer.execute_query(query_analysis)
                 
-                # Dados analisados
-                analysis_data = result["analysis_data"]
+                # Gerar resposta com o Gemini
+                response = analyzer.generate_response(query, query_result)
                 
-                # Layout para visualizações
-                viz_col1, viz_col2 = st.columns(2)
+                # Atualizar placeholder com a resposta
+                message_placeholder.markdown(response)
                 
-                with viz_col1:
-                    # Gráfico de pizza para tipos de navios
-                    fig_types = px.pie(
-                        names=list(analysis_data["ship_types"].keys()),
-                        values=list(analysis_data["ship_types"].values()),
-                        title="Distribuição por Tipo de Navio"
-                    )
-                    st.plotly_chart(fig_types, use_container_width=True)
+                # Adicionar resposta ao histórico
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                
+                # Se houver dados de navios, oferecer visualização
+                if "ships" in query_result and len(query_result["ships"]) > 0 and "note" not in query_result:
+                    show_viz = st.button("📊 Visualizar dados dos navios")
                     
-                    # Gráfico de barras para direções
-                    fig_directions = px.bar(
-                        x=list(analysis_data["directions"].keys()),
-                        y=list(analysis_data["directions"].values()),
-                        title="Distribuição por Direção"
-                    )
-                    st.plotly_chart(fig_directions, use_container_width=True)
-                
-                with viz_col2:
-                    # Gráfico de barras para status dos navios
-                    fig_status = px.bar(
-                        x=list(analysis_data["statuses"].keys()),
-                        y=list(analysis_data["statuses"].values()),
-                        title="Status dos Navios"
-                    )
-                    st.plotly_chart(fig_status, use_container_width=True)
-                    
-                    # Gráfico de pizza para bandeiras
-                    fig_flags = px.pie(
-                        names=list(analysis_data["flags"].keys()),
-                        values=list(analysis_data["flags"].values()),
-                        title="Distribuição por Bandeira"
-                    )
-                    st.plotly_chart(fig_flags, use_container_width=True)
-                
-                # Visualização em mapa
-                st.subheader("Mapa de Navios")
-                
-                # Dados dos navios
-                ships = result["raw_data"].get("ships", [])
-                
-                if ships:
-                    # Criar DataFrame para o mapa
-                    map_data = pd.DataFrame([
-                        {
-                            "lat": ship.get("latitude"),
-                            "lon": ship.get("longitude"),
-                            "name": ship.get("name", "Unknown"),
-                            "type": ship.get("type", "Unknown"),
-                            "speed": ship.get("speed", 0),
-                            "course": ship.get("course", 0),
-                            "flag": ship.get("flag", "Unknown"),
-                            "destination": ship.get("destination", "Unknown"),
-                            "status": ship.get("status", "Unknown")
-                        }
-                        for ship in ships if ship.get("latitude") and ship.get("longitude")
-                    ])
-                    
-                    # Criar mapa
-                    fig_map = px.scatter_mapbox(
-                        map_data,
-                        lat="lat",
-                        lon="lon",
-                        hover_name="name",
-                        hover_data=["type", "speed", "course", "flag", "destination", "status"],
-                        color="type",
-                        zoom=6,
-                        height=500
-                    )
-                    
-                    fig_map.update_layout(
-                        mapbox_style="open-street-map",
-                        mapbox_zoom=7,
-                        mapbox_center={"lat": analysis_data["region"]["lat"] if isinstance(analysis_data["region"], dict) else 0, 
-                                       "lon": analysis_data["region"]["lon"] if isinstance(analysis_data["region"], dict) else 0},
-                        margin={"r":0,"t":0,"l":0,"b":0}
-                    )
-                    
-                    st.plotly_chart(fig_map, use_container_width=True)
-                else:
-                    st.warning("Não há dados de navios disponíveis para mostrar no mapa.")
-            
-            with tab3:
-                # Dados brutos
-                st.subheader("Dados Brutos")
-                
-                ships = result["raw_data"].get("ships", [])
-                
-                if ships:
-                    # Converter para DataFrame para melhor visualização
-                    df = pd.DataFrame(ships)
-                    st.dataframe(df)
-                    
-                    # Opção para download dos dados
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        "Download CSV",
-                        csv,
-                        f"ships_data_{analysis_data['region'].replace(' ', '_').lower()}_{analysis_data['timestamp'].replace(':', '-').replace(' ', '_')}.csv",
-                        "text/csv",
-                        key="download-csv"
-                    )
-                else:
-                    st.warning("Não há dados brutos disponíveis.")
-        else:
-            st.info("Selecione uma região e clique em 'Analisar Tráfego' para ver os resultados.")
+                    if show_viz:
+                        # Criar DataFrame para visualização
+                        ships = query_result["ships"]
+                        
+                        if len(ships) > 0:
+                            with st.expander("Visualização de Dados", expanded=True):
+                                # Preparar dados para visualização
+                                ships_df = pd.DataFrame([
+                                    {
+                                        "nome": ship.get("name", "Desconhecido"),
+                                        "mmsi": ship.get("mmsi", "Desconhecido"),
+                                        "tipo": ship.get("type", "Desconhecido"),
+                                        "bandeira": ship.get("flag", "Desconhecido"),
+                                        "velocidade": ship.get("speed", 0),
+                                        "curso": ship.get("course", 0),
+                                        "latitude": ship.get("latitude"),
+                                        "longitude": ship.get("longitude"),
+                                        "destino": ship.get("destination", "Desconhecido"),
+                                        "status": ship.get("status", "Desconhecido")
+                                    }
+                                    for ship in ships if ship.get("name")
+                                ])
+                                
+                                # Mostrar tabela
+                                st.dataframe(ships_df)
+                                
+                                # Layout em colunas para gráficos
+                                viz_col1, viz_col2 = st.columns(2)
+                                
+                                # Verificar se há dados suficientes para visualizações
+                                if len(ships_df) > 0:
+                                    with viz_col1:
+                                        # Contagem por tipo
+                                        type_counts = ships_df["tipo"].value_counts().reset_index()
+                                        type_counts.columns = ["Tipo de Navio", "Contagem"]
+                                        
+                                        fig_types = px.pie(
+                                            type_counts, 
+                                            values="Contagem", 
+                                            names="Tipo de Navio",
+                                            title="Distribuição por Tipo de Navio"
+                                        )
+                                        st.plotly_chart(fig_types, use_container_width=True)
+                                    
+                                    with viz_col2:
+                                        # Contagem por bandeira
+                                        flag_counts = ships_df["bandeira"].value_counts().reset_index()
+                                        flag_counts.columns = ["Bandeira", "Contagem"]
+                                        
+                                        fig_flags = px.bar(
+                                            flag_counts, 
+                                            x="Bandeira", 
+                                            y="Contagem",
+                                            title="Distribuição por Bandeira"
+                                        )
+                                        st.plotly_chart(fig_flags, use_container_width=True)
+                                    
+                                    # Mapa (se houver coordenadas)
+                                    if "latitude" in ships_df.columns and "longitude" in ships_df.columns:
+                                        map_data = ships_df.dropna(subset=["latitude", "longitude"])
+                                        
+                                        if len(map_data) > 0:
+                                            st.subheader("Mapa de Localização dos Navios")
+                                            
+                                            fig_map = px.scatter_mapbox(
+                                                map_data,
+                                                lat="latitude",
+                                                lon="longitude",
+                                                hover_name="nome",
+                                                hover_data=["tipo", "velocidade", "bandeira", "destino"],
+                                                color="tipo",
+                                                zoom=3,
+                                                height=500
+                                            )
+                                            
+                                            fig_map.update_layout(
+                                                mapbox_style="open-street-map",
+                                                margin={"r":0,"t":0,"l":0,"b":0}
+                                            )
+                                            
+                                            st.plotly_chart(fig_map, use_container_width=True)
+            except Exception as e:
+                message_placeholder.markdown(f"Desculpe, ocorreu um erro ao processar sua consulta: {str(e)}. Por favor, tente novamente ou reformule sua pergunta.")
+                st.session_state.messages.append({"role": "assistant", "content": f"Desculpe, ocorreu um erro ao processar sua consulta: {str(e)}. Por favor, tente novamente ou reformule sua pergunta."})
     
     # Rodapé
     st.markdown("---")
-    st.caption("Desenvolvido como prova de conceito para análise de tráfego marítimo utilizando dados AIS e IA generativa.")
+    st.caption("Chat Marítimo desenvolvido com Streamlit, API MyShipTracking e Gemini AI. Versão 1.0")
 
+# Função principal
 if __name__ == "__main__":
-    create_app()
+    create_chat_app()

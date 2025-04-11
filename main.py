@@ -18,8 +18,8 @@ class ShippingAnalyzer:
         self.myship_api_key = myship_api_key
         self.gemini_model = gemini_model
         self.base_url = "https://api.myshiptracking.com/v1"
-        
-        def get_ships_near_port(self, port_name):
+
+    def get_ships_near_port(self, port_name):
         """Obtém navios próximos a um porto específico."""
         # Primeiro, buscar o porto pelo nome
         port_endpoint = f"{self.base_url}/ports"

@@ -1,4 +1,5 @@
 import requests
+import random
 import json
 import os
 from google.generativeai import configure, GenerativeModel
@@ -65,6 +66,46 @@ class ShippingAnalyzer:
                 port_related_vessels.append(vessel)
         
         return {"ships": port_related_vessels}
+
+    def get_ships_in_area(self, latitude, longitude, radius=50):
+    """Obtém navios em uma área específica."""
+    # Como descobrimos que a API MyShipTracking não suporta busca por área,
+    # vamos adaptar para encontrar navios pelo porto mais próximo
+    
+    # Para fins de demonstração, vamos retornar alguns dados simulados
+    # Esta é uma solução temporária enquanto decidimos qual API usar
+    
+    ships = [
+        {
+            "mmsi": "123456789",
+            "name": "EXAMPLE SHIP 1",
+            "type": "Cargo",
+            "speed": 12.5,
+            "course": 135.5,
+            "latitude": latitude + (random.random() - 0.5) * (radius/100),
+            "longitude": longitude + (random.random() - 0.5) * (radius/100),
+            "flag": "Panama",
+            "destination": "Rotterdam"
+        },
+        {
+            "mmsi": "987654321",
+            "name": "EXAMPLE SHIP 2",
+            "type": "Tanker",
+            "speed": 8.3,
+            "course": 275.2,
+            "latitude": latitude + (random.random() - 0.5) * (radius/100),
+            "longitude": longitude + (random.random() - 0.5) * (radius/100),
+            "flag": "Liberia",
+            "destination": "Singapore"
+        },
+        # Adicione mais navios simulados para demonstração
+    ]
+    
+    # Adicione uma nota indicando que estes são dados simulados
+    return {
+        "ships": ships, 
+        "note": "Dados simulados para demonstração. API MyShipTracking não suporta busca por área geográfica."
+    }
     
     def get_port_info(self, port_name):
         """Obtém informações sobre um porto específico."""

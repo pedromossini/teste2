@@ -20,7 +20,7 @@ class ShippingAnalyzer:
         self.base_url = "https://api.myshiptracking.com/v1"
         
     def get_ships_near_port(self, port_name):
-    "Obtém navios próximos a um porto específico."
+    """Obtém navios próximos a um porto específico."""
     # Primeiro, buscar o porto pelo nome
     port_endpoint = f"{self.base_url}/ports"
     
@@ -45,11 +45,8 @@ class ShippingAnalyzer:
     # Agora buscar navios ativos que têm este porto como destino ou origem
     vessels_endpoint = f"{self.base_url}/vessels"
     
-    # Infelizmente, não há um parâmetro direto para buscar por porto
-    # Precisamos fazer uma busca ampla e filtrar depois
     vessels_params = {
         "api_key": self.myship_api_key,
-        # Podemos usar uma string genérica para obter mais resultados
         "name": ""  # Busca ampla
     }
     
@@ -61,7 +58,6 @@ class ShippingAnalyzer:
     all_vessels = vessels_response.json()
     
     # Filtrar apenas navios relacionados ao porto
-    # Nota: Esta é uma simplificação, pois a API não fornece diretamente esta funcionalidade
     port_related_vessels = []
     
     for vessel in all_vessels:

@@ -431,7 +431,7 @@ class ShippingAnalyzer:
         elif "ship" in query_result:
             ship = query_result["ship"]
             
-            prompt_text = f"""
+            prompt_text = f""
             {maritime_context}
             
             O usuário perguntou: "{query}"
@@ -443,7 +443,7 @@ class ShippingAnalyzer:
             Destaque informações importantes como tipo, bandeira, posição atual e destino.
             """
         else:
-            prompt_text = f"""
+            prompt_text = f""
             {maritime_context}
             
             O usuário perguntou: "{query}"

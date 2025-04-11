@@ -19,23 +19,56 @@ class ShippingAnalyzer:
         self.gemini_model = gemini_model
         self.base_url = "https://api.myshiptracking.com/v1"
         
-    def get_ships_in_area(self, latitude, longitude, radius=50):
-        """Obtém navios em uma área específica."""
-        endpoint = f"{self.base_url}/ships/area"
-        
-        params = {
-            "api_key": self.myship_api_key,
-            "latitude": latitude,
-            "longitude": longitude,
-            "radius": radius,  # em milhas náuticas
-        }
-        
-        response = requests.get(endpoint, params=params)
-        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return {"error": f"Failed to fetch data: {response.status_code}"}
+    def get_ships_near_port(self, port_name):
+    """Obtém navios próximos a um porto específico."""
+    # Primeiro, buscar o porto pelo nome
+    port_endpoint = f"{self.base_url}/ports"
+    
+    port_params = {
+        "api_key": self.myship_api_key,
+        "name": port_name
+    }
+    
+    port_response = requests.get(port_endpoint, params=port_params)
+    
+    if port_response.status_code != 200:
+        return {"error": f"Failed to fetch port data: {port_response.status_code}"}
+    
+    port_data = port_response.json()
+    
+    if not port_data or len(port_data) == 0:
+        return {"error": f"No ports found with name: {port_name}"}
+    
+    # Usar o primeiro porto encontrado
+    port = port_data[0]
+    
+    # Agora buscar navios ativos que têm este porto como destino ou origem
+    vessels_endpoint = f"{self.base_url}/vessels"
+    
+    # Infelizmente, não há um parâmetro direto para buscar por porto
+    # Precisamos fazer uma busca ampla e filtrar depois
+    vessels_params = {
+        "api_key": self.myship_api_key,
+        # Podemos usar uma string genérica para obter mais resultados
+        "name": ""  # Busca ampla
+    }
+    
+    vessels_response = requests.get(vessels_endpoint, params=vessels_params)
+    
+    if vessels_response.status_code != 200:
+        return {"error": f"Failed to fetch vessels data: {vessels_response.status_code}"}
+    
+    all_vessels = vessels_response.json()
+    
+    # Filtrar apenas navios relacionados ao porto
+    # Nota: Esta é uma simplificação, pois a API não fornece diretamente esta funcionalidade
+    port_related_vessels = []
+    
+    for vessel in all_vessels:
+        if vessel.get("destination") == port_name or vessel.get("last_port") == port_name:
+            port_related_vessels.append(vessel)
+    
+    return {"ships": port_related_vessels}
     
     def get_port_info(self, port_name):
         """Obtém informações sobre um porto específico."""

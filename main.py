@@ -425,8 +425,9 @@ class ShippingAnalyzer:
             {json.dumps(port, indent=2, ensure_ascii=False)}
             
             Por favor, analise esses dados e responda à pergunta do usuário de forma completa e informativa.
-            Inclua informações relevantes sobre a localização, importância e características do porto.
-            ""
+            Inclua informações relevantes sobre a localização, importância e características do porto."""
+            """
+            
         elif "ship" in query_result:
             ship = query_result["ship"]
             
@@ -451,8 +452,8 @@ class ShippingAnalyzer:
             
             Por favor, responda educadamente, sugerindo que o usuário reformule a pergunta de forma mais
             específica, mencionando portos, navios, regiões marítimas ou outros termos relacionados ao 
-            transporte marítimo.
-            ""
+            transporte marítimo."""
+            """
         
         try:
             response = self.gemini_model.generate_content(prompt_text)

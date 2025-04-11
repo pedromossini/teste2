@@ -5,8 +5,8 @@ from google.generativeai import configure, GenerativeModel
 import streamlit as st
 
 # Configuração das chaves de API
-MY_SHIP_TRACKING_API_KEY = "SUA_CHAVE_API_MYSHIPTRACKING"
-GOOGLE_API_KEY = "SUA_CHAVE_API_GEMINI"
+MY_SHIP_TRACKING_API_KEY = "NZH%De@gmXSZQ%mmrxWwp5nQr^aErc%9GJ"
+GOOGLE_API_KEY = "AIzaSyCw8-JDdtbB-emS7hzugRfm4L-U7FgMeeg"
 
 # Configurar a API do Gemini
 configure(api_key=GOOGLE_API_KEY)

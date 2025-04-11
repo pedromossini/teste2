@@ -20,7 +20,7 @@ class ShippingAnalyzer:
         self.base_url = "https://api.myshiptracking.com/v1"
         
     def get_ships_near_port(self, port_name):
-    """Obtém navios próximos a um porto específico."""
+    "Obtém navios próximos a um porto específico."
     # Primeiro, buscar o porto pelo nome
     port_endpoint = f"{self.base_url}/ports"
     
